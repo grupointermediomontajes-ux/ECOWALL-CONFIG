@@ -1,0 +1,18 @@
+{
+ "mesa_alta_glb": "mesa_alta_glb.glb",
+ "pico": "pico.bin",
+ "esquina90": "esquina90.bin",
+ "imported_normal_jpeg": "imported_normal_jpeg.bin",
+ "imported_roughness_jpeg": "imported_roughness_jpeg.bin",
+ "muro": "muro.bin",
+ "muro1c": "muro1c.bin",
+ "picodoble": "picodoble.bin",
+ "mostrador": "mostrador.bin",
+ "esquina45": "esquina45.bin",
+ "mostrador_1m": "mostrador_1m.bin",
+ "foco_pala_parts": "foco_pala_parts.bin",
+ "tv_soporte_parts": "tv_soporte_parts.bin",
+ "mesa_sillas_part": "mesa_sillas_part.bin",
+ "portacatalogos_parts": "portacatalogos_parts.bin",
+ "portacatalogos_parts_2": "portacatalogos_parts_2.bin"
+}

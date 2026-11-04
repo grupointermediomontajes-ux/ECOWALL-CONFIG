@@ -1,0 +1,19 @@
+{
+  "name": "ecowall-configurador",
+  "version": "0.1.15",
+  "private": true,
+  "description": "Configurador ECOWALL (app de escritorio con Tauri y versión web)",
+  "scripts": {
+    "vendor": "node scripts/fetch-vendor.mjs",
+    "icons": "tauri icon app-icon.png",
+    "css": "tailwindcss -c tailwind.config.js -i src/css/tailwind.src.css -o src/css/tailwind.css --minify",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:web": "npm run vendor && npm run css && node scripts/build-web.mjs",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "tailwindcss": "^3.4.17"
+  }
+}

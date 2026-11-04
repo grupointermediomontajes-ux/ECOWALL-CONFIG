@@ -1,0 +1,9 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+# generados automáticamente (npm run vendor / npm run icons)
+src/vendor/GLTFLoader.js
+src/vendor/OBJExporter.js
+src-tauri/icons/
+src/css/tailwind.css
+dist-web/

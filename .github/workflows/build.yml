@@ -1,0 +1,200 @@
+name: Compilar ECOWALL (Windows + Mac + Web)
+
+on:
+  push:
+    tags: ['v*']        # al subir una etiqueta, p. ej. v0.1.5
+  workflow_dispatch:     # o a mano desde la pestaña Actions
+
+# Todo se publica en la misma «Release» (borrador) v<versión de package.json>:
+#   Windows -> instalador .exe · Mac -> .dmg y .app.zip (universal: chip Apple e Intel) ·
+#   Web -> carpeta en .zip y la app en un solo archivo .html.
+jobs:
+  # ------------------------------------------------------------------ RELEASE
+  # Crea el borrador de la release (o reutiliza el de esa versión si ya existe).
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Crear o reutilizar el borrador de la release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: |
+            **Windows:** instalador `.exe`.
+            **Mac:** `.dmg` (o la app en `.app.zip`), universal: Mac con chip Apple (M1/M2/M3…) e Intel. Requiere macOS 13 o superior; la primera vez, clic derecho sobre la app → «Abrir».
+            **Web:** `ECOWALL-Web_….zip` (subir su contenido a un servidor web) y `ECOWALL_APP_….html` (la app en un solo archivo).
+
+            Al abrir la app de escritorio por primera vez se pide la carpeta de proyectos, que debe contener precios.xlsx.
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          ID=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
+          if [ -z "$ID" ]; then
+            ID=$(gh api "repos/${{ github.repository }}/releases" \
+              -f tag_name="$TAG" -f target_commitish="${{ github.sha }}" \
+              -f name="ECOWALL Configurador $TAG" -f body="$BODY" -F draft=true --jq .id)
+          fi
+          echo "Release $TAG (id $ID)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------------------------------ WINDOWS
+  windows:
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: windows
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Descargar librerías 3D (GLTFLoader, OBJExporter)
+        run: npm run vendor
+
+      - name: Generar iconos
+        run: npm run icons
+
+      - name: Compilar y subir a la release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.release.outputs.id }}
+
+  # ------------------------------------------------------------------ MAC
+  # App universal (Mac con chip Apple e Intel). GitHub a veces no tiene máquinas Mac libres
+  # («The job was not acquired by Runner…»), sobre todo las de chip Apple, así que se pide a la vez
+  # una Intel y una de chip Apple: la que consiga máquina sube los archivos a la release (si salen
+  # las dos, la segunda solo reemplaza los mismos archivos). Basta con que una termine bien.
+  # Se compila en pasos separados para localizar cualquier fallo y para que, aunque falle la
+  # creación del .dmg, siempre salga la app en .zip.
+  mac:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: mac-universal-${{ matrix.runner }}
+
+      - name: Versiones (para diagnóstico)
+        run: |
+          sw_vers
+          xcodebuild -version || true
+          rustc --version
+          cargo --version
+          node --version
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Descargar librerías 3D (GLTFLoader, OBJExporter)
+        run: npm run vendor
+
+      - name: Generar iconos
+        run: npm run icons
+
+      - name: "1) Compilar la app de Mac universal (.app)"
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app
+
+      - name: "2) Crear .zip de la app"
+        run: |
+          set -euxo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          APP_PATH=$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -n 1)
+          echo "App generada: $APP_PATH"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "dist/ECOWALL-Configurador_${VERSION}_mac-universal.app.zip"
+          ls -la dist
+
+      - name: "3) Crear .dmg (hdiutil, sin Finder)"
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          APP_PATH=$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -n 1)
+          rm -rf staging && mkdir -p staging dist
+          cp -R "$APP_PATH" staging/
+          ln -s /Applications staging/Applications
+          hdiutil create -volname "ECOWALL Configurador" -srcfolder staging -ov -format UDZO "dist/ECOWALL-Configurador_${VERSION}_mac-universal.dmg"
+          ls -la dist
+
+      - name: "4) Subir a la release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release.outputs.tag }}" dist/* --clobber
+
+  # ------------------------------------------------------------------ WEB
+  # Misma base de código que la app de escritorio: carpeta para un servidor web (.zip) y la app en un
+  # solo archivo .html (scripts/build-single-html.ps1, con PowerShell de la propia máquina Linux).
+  web:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Compilar versión web
+        run: npm run build:web
+
+      - name: Empaquetar
+        shell: bash
+        run: |
+          set -euxo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p dist
+          (cd dist-web && zip -r -q "../dist/ECOWALL-Web_${VERSION}.zip" .)
+          pwsh -NoProfile -File scripts/build-single-html.ps1 -Out "dist/ECOWALL_APP_v${VERSION}.html"
+          ls -la dist
+
+      - name: Subir a la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release.outputs.tag }}" dist/* --clobber

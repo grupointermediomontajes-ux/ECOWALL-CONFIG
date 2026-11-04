@@ -1,0 +1,4 @@
+/* Entrada de Tailwind. «npm run css» genera css/tailwind.css (lo hace GitHub Actions al compilar). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
