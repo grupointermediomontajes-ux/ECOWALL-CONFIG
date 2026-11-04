@@ -73,7 +73,7 @@ Versión de escritorio del configurador HTML, hecha con **Tauri 2**.
 
 ## Versión web
 La versión web sale de **la misma carpeta `src/`** que la app de escritorio (ya no hace falta mantener un HTML aparte).
-* No se compila en GitHub (las releases solo llevan los instaladores).
+* En GitHub, cada release lleva `ECOWALL_APP_v<versión>.html`: la app en un solo archivo, que se abre con doble clic.
 * En local: `npm run build:web` → carpeta `dist-web/` (su contenido se sube tal cual a un servidor web o se incrusta
   con `<iframe>`).
 * App en **un solo archivo HTML** (copia de seguridad): `powershell -ExecutionPolicy Bypass -File scripts/build-single-html.ps1 -Out ECOWALL_APP.html`.
@@ -82,12 +82,13 @@ La versión web sale de **la misma carpeta `src/`** que la app de escritorio (ya
 
 ## Compilar con GitHub
 1. Sube los cambios al repositorio.
-2. **Actions → «Compilar ECOWALL (Windows + Mac)» → Run workflow**.
-3. En **`https://github.com/USUARIO/REPOSITORIO/releases`** aparece el borrador `v<versión>` solo con los instaladores:
-   * **Windows:** `.exe`.
-   * **Mac:** `ECOWALL-Configurador_<versión>_mac-universal.dmg`, **universal**: vale para Mac con chip Apple
-     (M1/M2/M3…) e Intel.
-   Revisa el borrador y pulsa **Publish release** cuando estén los dos.
+2. **Actions → «Compilar ECOWALL (Windows + Mac + HTML)» → Run workflow**.
+3. En **`https://github.com/USUARIO/REPOSITORIO/releases`** aparece el borrador `v<versión>` con:
+   * **Windows:** instalador `.exe`.
+   * **Mac:** instalador `ECOWALL-Configurador_<versión>_mac-universal.dmg`, **universal**: vale para Mac con chip
+     Apple (M1/M2/M3…) e Intel.
+   * **Web:** `ECOWALL_APP_v<versión>.html`, la app en un solo archivo.
+   Revisa el borrador y pulsa **Publish release** cuando estén los tres.
 4. Cada versión nueva: sube el número `version` en `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` y `package.json`.
    Con el mismo número, volver a compilar actualiza los archivos del **borrador**; si esa versión ya está **publicada**,
    la compilación se para y avisa (las releases publicadas no se tocan). La compilación solo se lanza a mano.

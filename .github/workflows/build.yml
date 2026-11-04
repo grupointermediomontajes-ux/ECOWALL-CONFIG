@@ -1,13 +1,13 @@
-name: Compilar ECOWALL (Windows + Mac)
+name: Compilar ECOWALL (Windows + Mac + HTML)
 
 on:
   # Solo a mano (Actions → Run workflow). No se lanza con las etiquetas v…: al publicar una release, GitHub
   # crea su etiqueta y eso lanzaba otra compilación que sobrescribía los archivos de la release publicada.
   workflow_dispatch:
 
-# En la «Release» (borrador) v<versión de package.json> solo van los instaladores:
-#   Windows -> .exe · Mac -> .dmg (universal: chip Apple e Intel).
-# La versión web no se compila aquí (la app en un solo .html sale con scripts/build-single-html.ps1).
+# En la «Release» (borrador) v<versión de package.json> van:
+#   Windows -> instalador .exe · Mac -> instalador .dmg (universal: chip Apple e Intel) ·
+#   Web -> la app en un solo archivo .html descargable.
 jobs:
   # ------------------------------------------------------------------ RELEASE
   # Crea el borrador de la release (o reutiliza el de esa versión si ya existe).
@@ -28,6 +28,7 @@ jobs:
           BODY: |
             **Windows:** instalador `.exe`.
             **Mac:** instalador `.dmg`, universal: Mac con chip Apple (M1/M2/M3…) e Intel. Requiere macOS 13 o superior; la primera vez, clic derecho sobre la app → «Abrir».
+            **Web:** `ECOWALL_APP_v….html`, la app en un solo archivo: se abre con doble clic en el navegador, sin instalar nada (los proyectos se guardan en ese navegador).
 
             Al abrir la app de escritorio por primera vez se pide la carpeta de proyectos, que debe contener precios.xlsx.
         run: |
@@ -154,4 +155,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ needs.release.outputs.tag }}" dist/*.dmg --clobber
+
+  # ------------------------------------------------------------------ WEB (un solo .html)
+  # La app web en un solo archivo descargable: se abre con doble clic, sin instalar nada
+  # (scripts/build-single-html.ps1, con el PowerShell que trae la máquina Linux).
+  html:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Descargar librerías 3D (GLTFLoader, OBJExporter)
+        run: npm run vendor
+
+      - name: Crear la app en un solo .html
+        run: |
+          set -euxo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p dist
+          pwsh -NoProfile -File scripts/build-single-html.ps1 -Out "dist/ECOWALL_APP_v${VERSION}.html"
+          ls -la dist
+
+      - name: Subir el .html a la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release.outputs.tag }}" dist/*.html --clobber
 
