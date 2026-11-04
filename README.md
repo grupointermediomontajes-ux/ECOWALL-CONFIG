@@ -73,24 +73,24 @@ Versión de escritorio del configurador HTML, hecha con **Tauri 2**.
 
 ## Versión web
 La versión web sale de **la misma carpeta `src/`** que la app de escritorio (ya no hace falta mantener un HTML aparte).
-* En GitHub: la compilación deja en la **release** `ECOWALL-Web_<versión>.zip` (su contenido se sube tal cual a un
-  servidor web o se incrusta con `<iframe>`) y `ECOWALL_APP_v<versión>.html` (la app en un solo archivo).
-* En local: `npm run build:web` → carpeta `dist-web/`.
+* No se compila en GitHub (las releases solo llevan los instaladores).
+* En local: `npm run build:web` → carpeta `dist-web/` (su contenido se sube tal cual a un servidor web o se incrusta
+  con `<iframe>`).
 * App en **un solo archivo HTML** (copia de seguridad): `powershell -ExecutionPolicy Bypass -File scripts/build-single-html.ps1 -Out ECOWALL_APP.html`.
 * En la web los proyectos se guardan en el navegador; para no perderlos, usar Exportar / Importar `.ecowall`.
   Los precios se leen de `data/precios.xlsx` junto a la página.
 
 ## Compilar con GitHub
 1. Sube los cambios al repositorio.
-2. **Actions → «Compilar ECOWALL (Windows + Mac + Web)» → Run workflow**.
-3. Todo aparece en **`https://github.com/USUARIO/REPOSITORIO/releases`**, en el borrador `v<versión>`:
-   * **Windows:** instalador `.exe`.
-   * **Mac:** `ECOWALL-Configurador_<versión>_mac-universal.dmg` y la app en `.app.zip` (por si el `.dmg` no se pudiera
-     crear). Es **universal**: vale para Mac con chip Apple (M1/M2/M3…) e Intel.
-   * **Web:** `ECOWALL-Web_<versión>.zip` y `ECOWALL_APP_v<versión>.html`.
-   Revisa el borrador y pulsa **Publish release** cuando esté todo.
-4. Cada versión nueva: sube el número `version` en `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` y `package.json`
-   (con el mismo número, volver a compilar actualiza los archivos del mismo borrador).
+2. **Actions → «Compilar ECOWALL (Windows + Mac)» → Run workflow**.
+3. En **`https://github.com/USUARIO/REPOSITORIO/releases`** aparece el borrador `v<versión>` solo con los instaladores:
+   * **Windows:** `.exe`.
+   * **Mac:** `ECOWALL-Configurador_<versión>_mac-universal.dmg`, **universal**: vale para Mac con chip Apple
+     (M1/M2/M3…) e Intel.
+   Revisa el borrador y pulsa **Publish release** cuando estén los dos.
+4. Cada versión nueva: sube el número `version` en `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` y `package.json`.
+   Con el mismo número, volver a compilar actualiza los archivos del **borrador**; si esa versión ya está **publicada**,
+   la compilación se para y avisa (las releases publicadas no se tocan). La compilación solo se lanza a mano.
 
 ### Avisos del sistema al instalar (sin firma de pago)
 * **Windows**: SmartScreen → «Más información» → «Ejecutar de todas formas».
@@ -100,10 +100,10 @@ La versión web sale de **la misma carpeta `src/`** que la app de escritorio (ya
 ## Si falla la compilación de Mac
 * La app de Mac se pide a la vez a una máquina **Intel** (`macos-15-intel`) y a una de **chip Apple** (`macos-latest`),
   porque GitHub a veces no tiene Mac libres («The job was not acquired by Runner…»). **Basta con que una termine bien**:
-  si la otra sale cancelada sin pasos, la ejecución se marca en rojo pero los archivos de Mac ya están en la release.
+  si la otra sale cancelada sin pasos, la ejecución se marca en rojo pero el `.dmg` ya está en la release.
   Si salen canceladas las dos, en la ejecución pulsa **Re-run failed jobs** más tarde.
 * Si falla un paso, entra en **Actions → la ejecución → `mac` → el paso con la cruz roja** y copia las últimas ~30
-  líneas del registro: el nombre del paso indica la fase («1) Compilar la app», «2) .zip», «3) .dmg» o «4) Subir»).
+  líneas del registro: el nombre del paso indica la fase («1) Compilar la app», «2) .dmg» o «3) Subir»).
 
 ## Probar en local (opcional)
 **Solo la interfaz, sin instalar nada (Windows):** `powershell -ExecutionPolicy Bypass -File scripts/serve.ps1`

@@ -397,6 +397,9 @@ function disposeObject3D(root) {
                 undoStack = []; redoStack = [];
                 isDragging2D = false;
                 dragPieceId = null;
+                // Un proyecto nuevo empieza en el plano 2D (así no queda a la vista nada de la vista 3D,
+                // como el botón de descargar el modelo).
+                if (currentMode !== '2d') switchMode('2d');
                 setupModalPurpose = 'new';
                 document.getElementById('setup-name').value = project.name;
                 document.getElementById('setup-width').value = project.widthMeters;
@@ -1125,8 +1128,18 @@ function disposeObject3D(root) {
                 if (snapped) break;
             }
 
+            if (snapped) makeRoomForCaps(draggedPiece);
             clampPieceToBounds(draggedPiece);
             return snapped;
+        }
+
+        // Si un extremo libre del panel lleva tapa y esa tapa se montaría sobre otra pieza (p. ej. un tramo
+        // nuevo que arranca contra el lado de otra pared), el panel se separa lo justo (el grosor de la tapa)
+        // para que la tapa empiece en el panel y no pise la otra pieza.
+        function makeRoomForCaps(p) {
+            if (!CAP_ALLOWANCE_TYPES.includes(p.type)) return;
+            const push = capOverlapPush([p], pieces.filter(o => o.id !== p.id));
+            if (push) { p.x += push.dx; p.y += push.dy; }
         }
 
         function getRotatedBoundingBox(piece) {
@@ -1546,6 +1559,7 @@ function disposeObject3D(root) {
             return lateralCapsCache.caps.map(c => ({ ...c }));
         }
 
+        const CAP_JOIN_TYPES = ['muro', 'muro1c', 'pico', 'picodoble', 'esquina', 'esquina45'];
         function computeAutomaticLateralCapsUncached() {
             let autoCaps = [];
             let tolerance = 0.05;
@@ -1567,12 +1581,20 @@ function disposeObject3D(root) {
                     { localX: outwardOffset, localY: centerLocalY, idx: 1 }
                 ];
 
+                // Caras de unión de cada extremo (plan2d.js): el extremo solo queda cerrado si se une por su
+                // cara de unión con otra pieza de construcción (pared en línea o cara turquesa de una esquina).
+                // Una pared que empieza contra el lado de otra (un tramo nuevo) lleva tapa en ese extremo.
+                const endFaces = typeof getJoinFacesWorld === 'function' ? getJoinFacesWorld(p) : null;
+
                 rawEnds.forEach(end => {
                     let worldX = p.x + (end.localX * cos - end.localY * sin);
                     let worldY = p.y + (end.localX * sin + end.localY * cos);
 
                     let isExposed = true;
-                    pieces.forEach(other => {
+                    if (endFaces) {
+                        isExposed = !pieces.some(other => other.id !== p.id && CAP_JOIN_TYPES.includes(other.type) &&
+                            getJoinFacesWorld(other).some(face => joinFacesMeet(endFaces[end.idx], face)));
+                    } else pieces.forEach(other => {
                         if (other.id === p.id || ['focoPala', 'tvSoporte', 'mesaSillas', 'mesaAlta', 'portaCatalogos'].includes(other.type)) return;
                         const otherSpec = PIECE_SPECS[other.type];
                         if (otherSpec.height < spec.height) return;
@@ -1725,7 +1747,27 @@ function disposeObject3D(root) {
             });
             if (!fits) return false;
             moving.forEach(p => { p.x = Number((p.x + best.dx).toFixed(3)); p.y = Number((p.y + best.dy).toFixed(3)); });
+            // Como con una sola pieza: si una tapa del grupo pisa una pieza de fuera, el grupo se separa lo justo.
+            const push = capOverlapPush(moving, others);
+            if (push) moving.forEach(p => { p.x = Number((p.x + push.dx).toFixed(3)); p.y = Number((p.y + push.dy).toFixed(3)); });
             return true;
+        }
+
+        // Desplazamiento necesario para que ninguna tapa de «moving» pise una pieza de «others» (null si no hace falta).
+        function capOverlapPush(moving, others) {
+            if (typeof polygonPenetration !== 'function') return null;
+            const ids = new Set(moving.map(p => p.id));
+            const targets = others.filter(o => !EXTRA_PLAN_TYPES.includes(o.type)).map(o => getFootprintWorld(o));
+            let best = null;
+            computeAutomaticLateralCaps().filter(cap => ids.has(cap.parentId)).forEach(cap => {
+                const capPoly = getFootprintWorld({ ...cap, type: 'lateral' });
+                const overlap = Math.max(0, ...targets.map(t => polygonPenetration(capPoly, t)));
+                if (overlap < 0.003 || (best && overlap <= best.overlap)) return;
+                const parent = pieces.find(p => p.id === cap.parentId);
+                const dx = parent.x - cap.x, dy = parent.y - cap.y, len = Math.hypot(dx, dy) || 1;
+                best = { overlap, dx: dx / len * overlap, dy: dy / len * overlap };
+            });
+            return best;
         }
 
         function movePieceBlock(startPieces, deltaX, deltaY) {
@@ -2253,7 +2295,7 @@ function disposeObject3D(root) {
                 x: Number((project.widthMeters / 2).toFixed(2)),
                 y: Number((project.depthMeters / 2).toFixed(2)),
                 rotation: 0,
-                finish: ['focoPala','tvSoporte','mesaSillas','mesaAlta','portaCatalogos'].includes(type) ? 'unpainted' : project.wallFinish
+                finish: 'unpainted'   // las piezas nuevas salen siempre en blanco; se imprimen después en 3D
             };
 
             clampPieceToBounds(newPiece);
@@ -2899,12 +2941,28 @@ const ECOWALL_PORTACATALOGOS_PARTS = [
             refresh2DSelection();
         }
 
+        // Copia de una pieza con todas sus características (acabado, impresión a 1 o 2 caras, lado impreso…)
+        // y el acabado de sus tapas, para que la copia se vea y salga en el listado, el informe de gráficas y
+        // Illustrator igual que la original. La copia nunca sale bloqueada.
+        function duplicatePieceData(p, x, y) {
+            const copy = JSON.parse(JSON.stringify(p));
+            copy.id = nextPieceId++;
+            copy.x = x;
+            copy.y = y;
+            delete copy.locked;
+            [0, 1].forEach(end => {
+                const finish = autoLateralFinishes.get(`auto_cap_${p.id}_${end}`);
+                if (finish) autoLateralFinishes.set(`auto_cap_${copy.id}_${end}`, finish);
+            });
+            return copy;
+        }
+
         function duplicateSelectionGroup() {
             if (currentMode !== '2d' || !multiSelectEnabled) return;
             const originals = pieces.filter(p => selectedPieceIds.has(p.id));
             if (!originals.length) return;
             saveState();
-            const duplicates = originals.map(p => ({...p, id: nextPieceId++, x: Number((p.x + 0.3).toFixed(3)), y: Number((p.y + 0.3).toFixed(3))}));
+            const duplicates = originals.map(p => duplicatePieceData(p, Number((p.x + 0.3).toFixed(3)), Number((p.y + 0.3).toFixed(3))));
             // Desplazamiento idéntico para conservar la geometría relativa del grupo.
             const dx = Math.min(0, ...duplicates.map(p => project.widthMeters - (p.x + getPlacementBox(p).w / 2)));
             const dy = Math.min(0, ...duplicates.map(p => project.depthMeters - (p.y + getPlacementBox(p).h / 2)));
@@ -2955,14 +3013,7 @@ const ECOWALL_PORTACATALOGOS_PARTS = [
             const p = pieces.find(x => x.id === selectedPieceId);
             if (!p) return;
             saveState();
-            const newP = {
-                id: nextPieceId++,
-                type: p.type,
-                x: Number((p.x + 0.3).toFixed(2)),
-                y: Number((p.y + 0.3).toFixed(2)),
-                rotation: p.rotation,
-                finish: p.finish
-            };
+            const newP = duplicatePieceData(p, Number((p.x + 0.3).toFixed(2)), Number((p.y + 0.3).toFixed(2)));
             clampPieceToBounds(newP);
             pieces.push(newP);
             rebuildAllPieceMeshes();

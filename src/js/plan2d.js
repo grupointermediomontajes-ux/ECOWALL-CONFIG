@@ -481,8 +481,27 @@
 
         const EXTRA_PLAN_TYPES = ['focoPala', 'tvSoporte', 'mesaSillas', 'mesaAlta', 'portaCatalogos'];
 
-        // Marca de impresión: banda de color en cada cara impresa (a una cara, solo en ese lado).
-        // Paneles con otras formas (esquinas, picos) llevan una etiqueta «IMP».
+        // Marca de impresión: banda de color en cada cara impresa (a una cara, solo en ese lado). En esquinas y
+        // picos, la banda sigue la cara impresa (graficas.js): exterior de la esquina 90º, diagonal de la 45º,
+        // punta o trasera del pico y las dos puntas del pico doble. Lo demás impreso lleva la etiqueta «IMP».
+        function drawPrintedFaces(ctx, faces, scale, t) {
+            faces.forEach(face => {
+                for (let i = 0; i < face.path.length - 1; i++) {
+                    const [ax, ay] = face.path[i], [bx, by] = face.path[i + 1];
+                    let nx = ay - by, ny = bx - ax;
+                    const len = Math.hypot(nx, ny) || 1; nx /= len; ny /= len;
+                    if (nx * (ax + bx) + ny * (ay + by) < 0) { nx = -nx; ny = -ny; }   // normal hacia fuera
+                    const k = t / scale;                                               // banda hacia dentro
+                    ctx.beginPath();
+                    ctx.moveTo(ax * scale, ay * scale);
+                    ctx.lineTo(bx * scale, by * scale);
+                    ctx.lineTo((bx - nx * k) * scale, (by - ny * k) * scale);
+                    ctx.lineTo((ax - nx * k) * scale, (ay - ny * k) * scale);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            });
+        }
         function drawPrintedMarker(ctx, p, spec, scale, C, sym) {
             if (p.finish !== 'painted' || EXTRA_PLAN_TYPES.includes(p.type)) return;
             ctx.save();
@@ -499,6 +518,8 @@
                 face(1);
             } else if (p.type === 'mostrador' || p.type === 'mostrador1m') {
                 face(p.printSide === -1 ? -1 : 1);   // solo el frente impreso
+            } else if (['esquina', 'esquina45', 'pico', 'picodoble'].includes(p.type) && typeof window.ecowallPieceFaces === 'function') {
+                drawPrintedFaces(ctx, window.ecowallPieceFaces(p).filter(f => f.printed), scale, t);
             } else {
                 const r = Math.max(5, 0.05 * scale);
                 ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
@@ -919,6 +940,14 @@
                     if (polygonPenetration(A.poly, B.poly) > OVERLAP_TOLERANCE) { ids.add(A.p.id); ids.add(B.p.id); }
                 }
             }
+            // Las tapas también cuentan: si la tapa de un panel pisa otra pieza, se marcan el panel y esa pieza.
+            computeAutomaticLateralCaps().forEach(cap => {
+                const capPoly = getFootprintWorld({ ...cap, type: 'lateral' });
+                list.forEach(B => {
+                    if (B.p.id === cap.parentId || EXTRA_PLAN_TYPES.includes(B.p.type)) return;
+                    if (polygonPenetration(capPoly, B.poly) > OVERLAP_TOLERANCE) { ids.add(cap.parentId); ids.add(B.p.id); }
+                });
+            });
             overlapCache = { key, ids };
             return ids;
         }

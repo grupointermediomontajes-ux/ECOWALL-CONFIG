@@ -574,5 +574,7 @@ alert("ECOWALL - " + D.project + "\\n" + total + " mesas de trabajo a tamano rea
       if (button) { button.disabled = false; button.innerHTML = label; }
     }
   };
+  // El plano 2D usa las mismas caras para marcar en morado las caras impresas de esquinas y picos.
+  window.ecowallPieceFaces = pieceFaces;
   window.__ecowallGraphics = { computeGraphicRuns, buildGraphicsSheets, illustratorTemplateData, buildIllustratorScript };
 })();
